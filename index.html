@@ -490,7 +490,7 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
     if(r.kind==='kot')ATT[r.key]=(d.rows||[]).filter(x=>pidOk(x.pid));
     else if(r.kind==='kot_req'){for(const x of (d.rows||[]))if(pidOk(x.pid))REQ.push(Object.assign({memo:''},x))}
     else if(r.kind==='ys'&&WEEK.includes(r.key)){for(const site of ['fk','ik'])for(const b of (d[site]||[])){const id=`ys_${site}_${r.key}_${b.ben}`;
-      YS.push({id,ys:true,kind:'スポット',site,date:r.key,name:`タイヤ便${b.ben}(Y-system)`,start:b.start||'08:00',end:b.end||'17:00',vtype:null,veh:null,procs:['d2','unl'],need:1,from:'Y-system',note:`店${b.stops||0}・配送${b.qd||0}本・回収${b.qc||0}本。担当と時間はY-systemのダイヤが正(ここで動かしても次の取込で戻る)`});
+      YS.push({id,ys:true,kind:'スポット',site,date:r.key,name:`タイヤ便${String(b.ben).replace(/^便/,'')}(Y-system)`,start:b.start||'08:00',end:b.end||'17:00',vtype:null,veh:null,procs:['d2','unl'],need:1,from:'Y-system',note:`店${b.stops||0}・配送${b.qd||0}本・回収${b.qc||0}本。担当と時間はY-systemのダイヤが正(ここで動かしても次の取込で戻る)`});
       if(b.pid&&pidOk(b.pid))(ysAsg[r.key]=ysAsg[r.key]||[]).push({item:id,pid:b.pid,role:'スポット',srole:''})}}}
   REQ.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   window.__PC_IMPORT={kot:Object.keys(ATT).length,req:REQ.length,ys:YS.length,rows:(extra.data||[]).length}; // 点検用(件数だけ)
