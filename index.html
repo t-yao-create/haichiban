@@ -461,9 +461,10 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   const {data:allow,error:aerr}=await sb.from('allowlist').select('email,person_id,layer').eq('email',email).maybeSingle();
   if(aerr||!allow){box(`<b>配置盤</b><p>${email} は許可されていません。矢尾さんに連絡してください。</p><button id="lv-out" class="btn">ログアウト</button>`);$('#lv-out').addEventListener('click',async()=>{await sb.auth.signOut();location.reload()});return}
   box('<b>配置盤</b><p class="hint">マスタを読んでいます…</p>');
-  const [sites,people,vehicles,runs,states]=await Promise.all([
-    sb.from('site').select('*').order('sort'), sb.from('person').select('*').eq('active',true), sb.from('vehicle').select('*').eq('active',true), sb.from('run').select('*').eq('active',true), sb.from('app_state').select('key,data,updated_at').eq('kind','ls')]);
-  for(const r of [sites,people,vehicles,runs,states])if(r.error){box('<b>配置盤</b><p>読めませんでした: '+r.error.message+'</p>');return}
+  const [sites,people,vehicles,runs,states,extra]=await Promise.all([
+    sb.from('site').select('*').order('sort'), sb.from('person').select('*').eq('active',true), sb.from('vehicle').select('*').eq('active',true), sb.from('run').select('*').eq('active',true), sb.from('app_state').select('key,data,updated_at').eq('kind','ls'),
+    sb.from('app_state').select('kind,key,data').in('kind',['kot','kot_req','ys'])]); // PCの取込(KOTの勤怠・休暇申請、Y-systemのタイヤ便)
+  for(const r of [sites,people,vehicles,runs,states,extra])if(r.error){box('<b>配置盤</b><p>読めませんでした: '+r.error.message+'</p>');return}
   // ---- 試作と同じ形のマスタを組む ----
   const hhmm=t=>String(t||'').slice(0,5);
   const SITES=sites.data.map(s=>({id:s.id,name:s.name,kind:s.kind,manager:s.manager||undefined}));
@@ -483,6 +484,16 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   const pad=n=>String(n).padStart(2,'0');const d0=new Date();const TODAY=`${d0.getFullYear()}-${pad(d0.getMonth()+1)}-${pad(d0.getDate())}`;
   const mon=new Date(d0);mon.setDate(d0.getDate()-((d0.getDay()+6)%7));const WEEK=[...Array(7)].map((_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`});
   const EXECUTORS=PEOPLE.filter(p=>p.site==='hq').map((p,i)=>({id:'e'+(i+1),name:p.name.split(' ')[0],site:'all'}));
+  // ---- PCの取込(kot/push_to_db.py・ysystem/pull_daiya.py が app_state に置いたもの) ----
+  const pidOk=pid=>PEOPLE.some(p=>p.id===pid);const ATT={};const REQ=[];const YS=[];const ysAsg={};
+  for(const r of (extra.data||[])){const d=r.data||{};
+    if(r.kind==='kot')ATT[r.key]=(d.rows||[]).filter(x=>pidOk(x.pid));
+    else if(r.kind==='kot_req'){for(const x of (d.rows||[]))if(pidOk(x.pid))REQ.push(Object.assign({memo:''},x))}
+    else if(r.kind==='ys'&&WEEK.includes(r.key)){for(const site of ['fk','ik'])for(const b of (d[site]||[])){const id=`ys_${site}_${r.key}_${b.ben}`;
+      YS.push({id,ys:true,kind:'スポット',site,date:r.key,name:`タイヤ便${b.ben}(Y-system)`,start:b.start||'08:00',end:b.end||'17:00',vtype:null,veh:null,procs:['d2','unl'],need:1,from:'Y-system',note:`店${b.stops||0}・配送${b.qd||0}本・回収${b.qc||0}本。担当と時間はY-systemのダイヤが正(ここで動かしても次の取込で戻る)`});
+      if(b.pid&&pidOk(b.pid))(ysAsg[r.key]=ysAsg[r.key]||[]).push({item:id,pid:b.pid,role:'スポット',srole:''})}}}
+  REQ.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  window.__PC_IMPORT={kot:Object.keys(ATT).length,req:REQ.length,ys:YS.length,rows:(extra.data||[]).length}; // 点検用(件数だけ)
   const roleOf={経営:'経営',拠点長:'拠点長',管理部門:'拠点長',現場責任者:'現場責任者'};
   const role=roleOf[allow.layer]||'本人';
   // ---- localStorage の代わり(データベースに置く) ----
@@ -508,7 +519,7 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   Storage.prototype.removeItem=function(k){if(this===localStorage&&mine(k)){delete LS[norm(k)];return}return real.rm(k)};
   window.addEventListener('beforeunload',()=>{if(Object.keys(pending).length){flush()}});
   // ---- 画面の台本を順に動かす ----
-  const data=`const SITES=${JSON.stringify(SITES)};\nconst PROCS=${JSON.stringify(PROCS)};\nconst PEOPLE=${JSON.stringify(PEOPLE)};\nconst VEHICLES=${JSON.stringify(VEHICLES)};\nconst RUNS=${JSON.stringify(RUNS)};\nconst SPOTS0=[];\nlet SPOTS=[];\nconst LEAVES0=[];\nconst TODAY='${TODAY}';\nconst WEEK=${JSON.stringify(WEEK)};\nconst WD=['日','月','火','水','木','金','土'];\nconst STD_HOURS=9;\nconst TL0=6, TL1=21;\nconst HANDOVERS0=[];\nconst ROLLCALL0={};\nconst EXECUTORS=${JSON.stringify(EXECUTORS)};\nconst ATTENDANCE0={};\nconst DIGITACO0={};\nconst DIGITACO7={};\nconst WEATHER0={};\nconst KOT_REQUESTS0=[];\nwindow.LIVE={email:'${email}',layer:'${allow.layer}',person:'${allow.person_id||''}'};`;
+  const data=`const SITES=${JSON.stringify(SITES)};\nconst PROCS=${JSON.stringify(PROCS)};\nconst PEOPLE=${JSON.stringify(PEOPLE)};\nconst VEHICLES=${JSON.stringify(VEHICLES)};\nconst RUNS=${JSON.stringify(RUNS)};\nconst SPOTS0=[];\nlet SPOTS=[];\nconst LEAVES0=[];\nconst TODAY='${TODAY}';\nconst WEEK=${JSON.stringify(WEEK)};\nconst WD=['日','月','火','水','木','金','土'];\nconst STD_HOURS=9;\nconst TL0=6, TL1=21;\nconst HANDOVERS0=[];\nconst ROLLCALL0={};\nconst EXECUTORS=${JSON.stringify(EXECUTORS)};\nconst ATTENDANCE0=${JSON.stringify(ATT)};\nconst DIGITACO0={};\nconst DIGITACO7={};\nconst WEATHER0={};\nconst KOT_REQUESTS0=${JSON.stringify(REQ)};\nwindow.LIVE={email:'${email}',layer:'${allow.layer}',person:'${allow.person_id||''}'};`;
   // 人マスタの画面からの変更をデータベースへ(拠点長・経営。RLS でも守られる)
   // 追加は insert、直す・退職・使わないは update(一部の列だけ送るので upsert だと必須の列が足りず失敗する)
   window.MASTER_SAVE=async(table,id,patch,isNew)=>{const row=Object.assign({},patch,{updated_at:new Date().toISOString()});
@@ -517,6 +528,12 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   const run=(code)=>{const s=document.createElement('script');s.textContent=code;document.body.appendChild(s)};
   run(data);
   for(const sc of (window.__APP_SCRIPTS||[])){if(['data.js','attendance.js','digitaco.js','kot_requests.js'].includes(sc.name))continue;run(sc.code)}
+  // Y-systemのタイヤ便を、その週の作業(スポット)と配置に入れる。Y-systemが正なので、前回の取込の分は入れ替える(リーダーが動かしても次の読み込みで戻る)
+  try{const before=JSON.stringify({s:SPOTS.filter(s=>s.ys).map(s=>s.id),a:WEEK.map(d=>asgOn(d).filter(a=>String(a.item).startsWith('ys_')))});
+    SPOTS=SPOTS.filter(s=>!s.ys);for(const y of YS)SPOTS.push(y);
+    for(const d of WEEK){const arr=asgOn(d).filter(a=>!String(a.item).startsWith('ys_'));for(const a of (ysAsg[d]||[]))if(!onLeave(a.pid,d))arr.push(a);ASG[d]=arr}
+    const after=JSON.stringify({s:YS.map(s=>s.id),a:WEEK.map(d=>asgOn(d).filter(a=>String(a.item).startsWith('ys_')))});
+    if(before!==after){saveState();if(typeof renderBoard==='function')renderBoard()}}catch(e){console.error('Y-systemの便の反映',e)}
   // 画面側の仕上げ: 層は許可一覧で決まる(切替なし)。仮データに戻す は無し。
   try{const sel=$('#role');if(sel){sel.value=role;sel.disabled=true}const note=$('#role-note');if(note)note.textContent=`${email}(${allow.layer})でログイン中`;const rs=$('#op-reset');if(rs)rs.hidden=true;
     const badge=document.querySelector('.badge');if(badge)badge.textContent='本番(マスタはデータベース)';
