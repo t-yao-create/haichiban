@@ -522,7 +522,7 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   const dbKey=k=>k.startsWith('haichi_v2_')||k==='haichi_inv';
   const pending={};let timer=null;
   async function flush(){const keys=Object.keys(pending);if(!keys.length)return;const rows=keys.map(k=>({kind:'ls',key:k,data:{v:pending[k]}}));for(const k of keys)delete pending[k];
-    const {error}=await sb.from('app_state').upsert(rows,{onConflict:'kind,key'});if(error){console.error(error);if(typeof toast==='function')toast('保存できませんでした(回線か権限): '+error.message,'warn')}else{const now=new Date().toISOString();for(const r of rows)META[r.key]=now}}
+    const {data:saved,error}=await sb.from('app_state').upsert(rows,{onConflict:'kind,key'}).select('key,updated_at');if(error){console.error(error);if(typeof toast==='function')toast('保存できませんでした(回線か権限): '+error.message,'warn')}else{for(const r of (saved||[]))META[r.key]=r.updated_at}} // ★サーバーの更新時刻で持つ(端末の時計で持つと自分の保存を「ほかの人の変更」と取り違え、60秒後に画面が最初に戻っていた 2026-11-03)
   const real={get:localStorage.getItem.bind(localStorage),set:localStorage.setItem.bind(localStorage),rm:localStorage.removeItem.bind(localStorage)};
   Storage.prototype.getItem=function(k){if(this===localStorage&&mine(k)){k=norm(k);return (k in LS)?LS[k]:null}return real.get(k)};
   Storage.prototype.setItem=function(k,v){if(this===localStorage&&mine(k)){k=norm(k);LS[k]=String(v);if(dbKey(k)){pending[k]=String(v);clearTimeout(timer);timer=setTimeout(flush,600)}return}return real.set(k,v)};
@@ -553,6 +553,11 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
     // 経営だけ: いま開いているこのページ(index_live.html)を、公開の置き場(Storage の app/haichiban.html)へ上げる。種類は text/html で上げる(ダッシュボードからだと text/plain になるため)
     // (Storage への上げ替えボタンは廃止: supabase.co のアドレスは HTML を text/plain で返す仕様。公開ページは外の置き場に置く)
     if(typeof applyRole==='function')applyRole();}catch(e){console.error(e)}
+  // ---- 読み直し後は同じ画面(タブ・拠点・日・見方・位置)に戻る ----
+  try{const st=JSON.parse(sessionStorage.getItem('haichi_restore')||'null');sessionStorage.removeItem('haichi_restore');
+    if(typeof kYm!=='undefined'&&(!st||!st.kYm))kYm=TODAY.slice(0,7); // 本番の⑧〜⑫は今月から
+    if(st){if(st.site&&SITES.some(s=>s.id===st.site)){site=st.site;const sel=$('#site');if(sel)sel.value=site}if(st.date&&WEEK.includes(st.date))date=st.date;if(st.view)view=st.view;if(st.psite){psite=st.psite;const ps=$('#psite');if(ps)ps.value=psite}if(st.kBox)kBox=st.kBox;if(st.kYm)kYm=st.kYm;if(st.aSite)aSite=st.aSite;if(st.aDate)aDate=st.aDate;
+      if(typeof showTab==='function')showTab(st.tab||'board');if(typeof renderBoard==='function')renderBoard();setTimeout(()=>window.scrollTo(0,st.y||0),50)}}catch(e){console.error('画面の復元',e)}
   // ---- 本番の言葉: 「試作」の案内を読み替える(画面の台本は試作と共通なので、表示だけ直す。描画し直しのたびに当てる) ----
   document.title='人員配置盤';
   const WORDS=[['人員配置盤 試作','人員配置盤'],['ログインの層(試作用に切替)','ログイン'],['(本番は全端末、試作は同じ端末)','(全端末)'],['(ここで押すのは試作の代わり)',''],['(試作では作業の車両は変えられません)',''],
@@ -564,7 +569,12 @@ th.sortable{cursor:pointer;user-select:none}th.sortable:hover{text-decoration:un
   fixWords();let fixT=null;new MutationObserver(()=>{clearTimeout(fixT);fixT=setTimeout(fixWords,80)}).observe(document.body,{childList:true,subtree:true,characterData:false});
   overlay.remove();
   // 他の人の変更を取り込む: 60秒ごとに更新時刻を見て、新しければ読み直す(自分の未保存が無いとき)
+  const editing=()=>{const a=document.activeElement;if(a&&['INPUT','SELECT','TEXTAREA'].includes(a.tagName))return true;return !!document.querySelector('#pedit .panel, #padd .panel, #vedit .panel, #redit .panel, #addbox .panel, .panel input')}; // 入力中・直す枠が開いている
+  const stash=()=>{try{sessionStorage.setItem('haichi_restore',JSON.stringify({tab:localStorage.getItem('tab')||'board',site:typeof site!=='undefined'?site:null,date:typeof date!=='undefined'?date:null,view:typeof view!=='undefined'?view:null,psite:typeof psite!=='undefined'?psite:null,kBox:typeof kBox!=='undefined'?kBox:null,kYm:typeof kYm!=='undefined'?kYm:null,aSite:typeof aSite!=='undefined'?aSite:null,aDate:typeof aDate!=='undefined'?aDate:null,y:window.scrollY}))}catch(e){}};
+  let reloadWanted=false;
   setInterval(async()=>{if(Object.keys(pending).length||document.hidden)return;const {data:rows}=await sb.from('app_state').select('key,updated_at').eq('kind','ls');if(!rows)return;
-    if(rows.some(r=>META[r.key]&&r.updated_at>META[r.key])){if(typeof toast==='function')toast('ほかの人が配置を変えたので読み直します');setTimeout(()=>location.reload(),1200)}},60000);
+    if(reloadWanted||rows.some(r=>META[r.key]&&r.updated_at>META[r.key])){reloadWanted=true;if(editing()){if(typeof toast==='function')toast('ほかの人が記録を変えました。いまの入力を保存したら読み直します');return}
+      if(typeof toast==='function')toast('ほかの人が記録を変えたので読み直します(同じ画面に戻ります)');stash();setTimeout(()=>location.reload(),1200)}},60000);
+  window.addEventListener('beforeunload',stash);
 })();
 </script>
