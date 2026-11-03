@@ -568,8 +568,20 @@ table tr:nth-child(even) td.l1{background:var(--red-bg)} table tr:nth-child(even
   const mine=k=>k.startsWith('haichi'); // 'tab'・'view_site' は端末の localStorage に残す(読み直しても同じタブ・拠点)
   const dbKey=k=>k.startsWith('haichi_v2_')||k==='haichi_inv';
   const pending={};let timer=null;
-  async function flush(){const keys=Object.keys(pending);if(!keys.length)return;const rows=keys.map(k=>({kind:'ls',key:k,data:{v:pending[k]}}));for(const k of keys)delete pending[k];
-    const {data:saved,error}=await sb.from('app_state').upsert(rows,{onConflict:'kind,key'}).select('key,updated_at');if(error){console.error(error);if(typeof toast==='function')toast('保存できませんでした(回線か権限): '+error.message,'warn')}else{for(const r of (saved||[]))META[r.key]=r.updated_at}} // ★サーバーの更新時刻で持つ(端末の時計で持つと自分の保存を「ほかの人の変更」と取り違え、60秒後に画面が最初に戻っていた 2026-11-03)
+  let flushing=false,retryT=null;
+  async function flush(){if(flushing){clearTimeout(retryT);retryT=setTimeout(flush,800);return}const keys=Object.keys(pending);if(!keys.length)return;flushing=true;
+    try{
+      // 同時編集: 自分が読んだあとに ほかの人が同じ記録を変えていたら、上書きせずに知らせて読み直す(自分の直しは消えるので、やり直してもらう)
+      const {data:cur,error:e0}=await sb.from('app_state').select('key,updated_at').eq('kind','ls').in('key',keys);
+      if(!e0&&cur&&cur.some(r=>META[r.key]&&r.updated_at>META[r.key])){for(const k of keys)delete pending[k];if(typeof toast==='function')toast('ほかの人が先に同じ記録を変えていました。いまの直しは保存せず、最新を読み直します。もう一度お願いします','warn');stash();setTimeout(()=>location.reload(),2500);return}
+      const rows=keys.map(k=>({kind:'ls',key:k,data:{v:pending[k]}}));
+      const {data:saved,error}=await sb.from('app_state').upsert(rows,{onConflict:'kind,key'}).select('key,updated_at');
+      if(error){console.error(error);if(typeof toast==='function')toast('保存できませんでした(回線か権限)。10秒後にもう一度試します: '+error.message,'warn');clearTimeout(retryT);retryT=setTimeout(flush,10000);return} // pending は残す=消えない
+      for(const k of keys)if(pending[k]===rows.find(r=>r.key===k).data.v)delete pending[k]; // 送った中身と同じなら片づける(送っている間に変わった分は次に送る)
+      for(const r of (saved||[]))META[r.key]=r.updated_at;
+      if(Object.keys(pending).length){clearTimeout(retryT);retryT=setTimeout(flush,300)}
+    }catch(e){console.error(e);clearTimeout(retryT);retryT=setTimeout(flush,10000)}finally{flushing=false}}
+  window.addEventListener('online',()=>{if(Object.keys(pending).length)flush()}); // ★サーバーの更新時刻で持つ(端末の時計で持つと自分の保存を「ほかの人の変更」と取り違え、60秒後に画面が最初に戻っていた 2026-11-03)
   const real={get:localStorage.getItem.bind(localStorage),set:localStorage.setItem.bind(localStorage),rm:localStorage.removeItem.bind(localStorage)};
   Storage.prototype.getItem=function(k){if(this===localStorage&&mine(k)){k=norm(k);return (k in LS)?LS[k]:null}return real.get(k)};
   Storage.prototype.setItem=function(k,v){if(this===localStorage&&mine(k)){k=norm(k);LS[k]=String(v);if(dbKey(k)){pending[k]=String(v);clearTimeout(timer);timer=setTimeout(flush,600)}return}return real.set(k,v)};
@@ -621,7 +633,9 @@ table tr:nth-child(even) td.l1{background:var(--red-bg)} table tr:nth-child(even
   const editing=()=>{const a=document.activeElement;if(a&&['INPUT','SELECT','TEXTAREA'].includes(a.tagName))return true;return !!document.querySelector('#pedit .panel, #padd .panel, #vedit .panel, #redit .panel, #addbox .panel, .panel input')}; // 入力中・直す枠が開いている
   const stash=()=>{try{sessionStorage.setItem('haichi_restore',JSON.stringify({tab:localStorage.getItem('tab')||'board',site:typeof site!=='undefined'?site:null,date:typeof date!=='undefined'?date:null,view:typeof view!=='undefined'?view:null,psite:typeof psite!=='undefined'?psite:null,kBox:typeof kBox!=='undefined'?kBox:null,kYm:typeof kYm!=='undefined'?kYm:null,aSite:typeof aSite!=='undefined'?aSite:null,aDate:typeof aDate!=='undefined'?aDate:null,y:window.scrollY}))}catch(e){}};
   let reloadWanted=false;
-  setInterval(async()=>{if(Object.keys(pending).length||document.hidden)return;const {data:rows}=await sb.from('app_state').select('key,updated_at').eq('kind','ls');if(!rows)return;
+  setInterval(async()=>{if(Object.keys(pending).length||document.hidden)return;
+    const d1=new Date();const todayNow=`${d1.getFullYear()}-${pad(d1.getMonth()+1)}-${pad(d1.getDate())}`;if(todayNow!==TODAY&&!editing()){if(typeof toast==='function')toast('日付が変わったので読み直します');stash();setTimeout(()=>location.reload(),1200);return}
+    const {data:rows}=await sb.from('app_state').select('key,updated_at').eq('kind','ls');if(!rows)return;
     if(reloadWanted||rows.some(r=>META[r.key]&&r.updated_at>META[r.key])){reloadWanted=true;if(editing()){if(typeof toast==='function')toast('ほかの人が記録を変えました。いまの入力を保存したら読み直します');return}
       if(typeof toast==='function')toast('ほかの人が記録を変えたので読み直します(同じ画面に戻ります)');stash();setTimeout(()=>location.reload(),1200)}},60000);
   window.addEventListener('beforeunload',stash);
