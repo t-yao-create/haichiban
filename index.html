@@ -503,7 +503,7 @@ table tr:nth-child(even) td.l1{background:var(--red-bg)} table tr:nth-child(even
       <label style="display:block;margin:10px 0 4px">メールアドレス</label>
       <input id="lv-email" type="email" autocomplete="email" style="width:100%;font:inherit;padding:8px;border:1.5px solid #c9d1dc;border-radius:8px">
       <button id="lv-otp" class="btn primary" style="margin-top:10px;width:100%">ログイン用のリンクをメールで受け取る</button>
-      <button id="lv-google" class="btn" style="margin-top:8px;width:100%">Googleでログイン</button>
+      <button id="lv-google" class="btn" style="margin-top:8px;width:100%" hidden>Googleでログイン</button>
       <p id="lv-msg" class="hint" style="margin:10px 0 0">${urlErr?'リンクが使えませんでした: '+urlErr.replace(/\+/g,' ')+'(リンクは1回だけ・1時間だけ有効です。もう一度メールで受け取ってください)':''}</p>`);
     $('#lv-otp').addEventListener('click',async()=>{const email=$('#lv-email').value.trim();if(!email){$('#lv-msg').textContent='メールアドレスを入れてください';return}
       const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
