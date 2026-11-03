@@ -681,11 +681,14 @@ table tr:nth-child(even) td.l1{background:var(--red-bg)} table tr:nth-child(even
   const str=x=>typeof x==='string'?x:null; // 文字列だけ持つ(画面のスクリプトが途中で止まった状態で読み直すと、同じ id の要素(window.psite など)が拾われて {} になるため)
   const stash=()=>{try{sessionStorage.setItem('haichi_restore',JSON.stringify({tab:localStorage.getItem('tab')||'board',site:typeof site!=='undefined'?str(site):null,date:typeof date!=='undefined'?str(date):null,view:typeof view!=='undefined'?str(view):null,psite:typeof psite!=='undefined'?str(psite):null,kBox:typeof kBox!=='undefined'?str(kBox):null,kYm:typeof kYm!=='undefined'?str(kYm):null,aSite:typeof aSite!=='undefined'?str(aSite):null,aDate:typeof aDate!=='undefined'?str(aDate):null,y:window.scrollY}))}catch(e){}};
   let reloadWanted=false;
-  setInterval(async()=>{if(Object.keys(pending).length||document.hidden)return;
+  // 日付が変わったら読み直す(隠れているタブでも)。サーバーの更新時刻の確認は見えているタブだけ。タブに戻ったときは待たずにすぐ確かめる
+  const poll=async()=>{if(Object.keys(pending).length)return;
     const d1=new Date();const todayNow=`${d1.getFullYear()}-${pad(d1.getMonth()+1)}-${pad(d1.getDate())}`;if(todayNow!==TODAY&&!editing()){if(typeof toast==='function')toast('日付が変わったので読み直します');stash();setTimeout(()=>location.reload(),1200);return}
+    if(document.hidden)return;
     const {data:rows}=await sb.from('app_state').select('key,updated_at').eq('kind','ls');if(!rows)return;
     if(reloadWanted||rows.some(r=>META[r.key]&&r.updated_at>META[r.key])){reloadWanted=true;if(editing()){if(typeof toast==='function')toast('ほかの人が記録を変えました。いまの入力を保存したら読み直します');return}
-      if(typeof toast==='function')toast('ほかの人が記録を変えたので読み直します(同じ画面に戻ります)');stash();setTimeout(()=>location.reload(),1200)}},60000);
+      if(typeof toast==='function')toast('ほかの人が記録を変えたので読み直します(同じ画面に戻ります)');stash();setTimeout(()=>location.reload(),1200)}};
+  setInterval(poll,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
   window.addEventListener('beforeunload',stash);
 })();
 </script>
