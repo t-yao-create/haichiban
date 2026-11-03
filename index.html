@@ -662,8 +662,12 @@ table tr:nth-child(even) td.l1{background:var(--red-bg)} table tr:nth-child(even
     ['本番はここから自動投稿し、サブPCの仕組みは新基盤への取込に変わります。','ここから自動投稿するかは未定です(いまはサブPCの安全運転レポートのまま)。'],
     ['公開画面(claude.ai)では印刷が効かないので、HTMLで保存して開き、Ctrl+Pで「PDFに保存」します。','「保存(HTML)・印刷」で印刷画面が開きます(送信先を「PDFに保存」にするとPDF)。'],
     ['(本番は誰が)',''],['(取消は本番で理由付き)','(取消はチャットで私に)'],['本番はCF管理表の「実績」と「月初予測」をここから書きます。','CF管理表への書き出しは未定です(いまはCF管理表が正)。'],
-    ['試作では予定の金額で月末残高を出しています','入金の記録が無い分は予定の金額で月末残高を出しています'],['試作ではこの端末にだけ残ります(本番はデータベースに保存)。','']];
-  const fixWords=()=>{const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const todo=[];let n;while((n=w.nextNode())){if(n.nodeValue&&/試作|架空|DM|本番|claude\.ai/.test(n.nodeValue))todo.push(n)}
+    ['試作では予定の金額で月末残高を出しています','入金の記録が無い分は予定の金額で月末残高を出しています'],
+    // ⑩⑪⑫はまだ仮の数を含む(人の時給・固定費・支出・月初残高は未投入)。本物は ⑧の数量(倉庫QR・手入力)と ⑨の請求(単価×数量)
+    ['得意先ごとの 売上(⑨の税抜)− 直接費','【仮の数を含む】人の時給・償却・賃料などの直接費はまだ仮の数です(本物の給与・固定費は未投入。売上は⑨の本物)。得意先ごとの 売上(⑨の税抜)− 直接費'],
+    ['月の資金: 月初残高 → 入金','【仮の数を含む】月初残高と支出はまだ仮の数です(入金は⑨の本物)。月の資金: 月初残高 → 入金'],
+    ['月次レポートに使う数字を一覧で。','【仮の数を含む】売上は本物ですが、限界利益・月末残高は仮の数を含みます。月次レポートに使う数字を一覧で。'],['試作ではこの端末にだけ残ります(本番はデータベースに保存)。','']];
+  const fixWords=()=>{const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const todo=[];let n;while((n=w.nextNode())){if(n.nodeValue&&(/試作|架空|DM|本番|claude\.ai/.test(n.nodeValue)||WORDS.some(([a])=>n.nodeValue.includes(a))))todo.push(n)}
     for(const t of todo){let v=t.nodeValue;for(const [a,b] of WORDS)v=v.split(a).join(b);if(v!==t.nodeValue)t.nodeValue=v}};
   fixWords();let fixT=null;new MutationObserver(()=>{clearTimeout(fixT);fixT=setTimeout(fixWords,80)}).observe(document.body,{childList:true,subtree:true,characterData:false});
   overlay.remove();
